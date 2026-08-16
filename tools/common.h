@@ -27,7 +27,7 @@ template<>
         serialize(t.ClipRect.y, buf);
         serialize(t.ClipRect.z, buf);
         serialize(t.ClipRect.w, buf);
-        serialize(t.TextureId, buf);
+        serialize(t.GetTexID(), buf);
         serialize(t.VtxOffset, buf);
         serialize(t.IdxOffset, buf);
     }
@@ -61,11 +61,18 @@ template<>
         unserialize(t.ClipRect.y, buf, offset);
         unserialize(t.ClipRect.z, buf, offset);
         unserialize(t.ClipRect.w, buf, offset);
-        unserialize(t.TextureId, buf, offset);
+
+        ImTextureID texId = ImTextureID_Invalid;
+        unserialize(texId, buf, offset);
+        t.TexRef = ImTextureRef(texId);
+
         unserialize(t.VtxOffset, buf, offset);
         unserialize(t.IdxOffset, buf, offset);
 
         t.UserCallback = NULL;
+        t.UserCallbackData = NULL;
+        t.UserCallbackDataSize = 0;
+        t.UserCallbackDataOffset = -1;
     }
 
 template<typename T>
@@ -163,7 +170,7 @@ struct Session {
         return true;
     }
 
-    bool getFrame(int32_t fid, ImDrawData * drawData, std::vector<ImDrawList> & drawLists, const ImDrawListSharedData * drawListSharedData) {
+    bool getFrame(int32_t fid, ImDrawData * drawData, std::vector<ImDrawList> & drawLists, ImDrawListSharedData * drawListSharedData) {
         if (fid >= (int32_t) frames.size()) return false;
 
         size_t offset = 0;
@@ -184,11 +191,7 @@ struct Session {
             drawLists.resize(drawData->CmdListsCount, ImDrawList(drawListSharedData));
         }
 
-        if (drawData->CmdLists) {
-            delete [] drawData->CmdLists;
-        }
-
-        drawData->CmdLists = new ImDrawList* [drawData->CmdListsCount];
+        drawData->CmdLists.resize(drawData->CmdListsCount);
 
         for (int32_t iList = 0; iList < drawData->CmdListsCount; ++iList) {
             drawData->CmdLists[iList] = &drawLists[iList];
