@@ -55,17 +55,34 @@ template<typename T>
     }
 
     template<>
-    inline void unserialize<ImDrawCmd>(ImDrawCmd & t, const std::vector<char> & buf, size_t & offset) {
+    inline void unserialize<ImDrawCmd>(ImDrawCmd & t,
+                                       const std::vector<char> & buf,
+                                       size_t & offset)
+    {
+        // 1️⃣  ElemCount
         unserialize(t.ElemCount, buf, offset);
+    
+        // 2️⃣  ClipRect (still ImVec4)
         unserialize(t.ClipRect.x, buf, offset);
         unserialize(t.ClipRect.y, buf, offset);
         unserialize(t.ClipRect.z, buf, offset);
         unserialize(t.ClipRect.w, buf, offset);
-        unserialize(t.TextureId, buf, offset);
+    
+        // 3️⃣  Texture ID – new field is inside TexRef
+        ImTextureID texId = 0;
+        unserialize(texId, buf, offset);
+        t.TexRef._TexID   = texId;      // <-- **new name**
+        t.TexRef._TexData = nullptr;    // clear optional pointer
+    
+        // 4️⃣  Offsets
         unserialize(t.VtxOffset, buf, offset);
         unserialize(t.IdxOffset, buf, offset);
-
-        t.UserCallback = NULL;
+    
+        // 5️⃣  Callbacks – keep them null (as the original code forced)
+        t.UserCallback        = nullptr;
+        t.UserCallbackData    = nullptr;
+        t.UserCallbackDataSize = 0;
+        t.UserCallbackDataOffset = -1;
     }
 
 template<typename T>
@@ -137,69 +154,74 @@ struct Session {
 
     bool addFrame(const ImDrawData * drawData) {
         FrameData frame;
-
-        serialize(drawData->Valid, frame);
-        serialize(drawData->CmdListsCount, frame);
-        serialize(drawData->TotalIdxCount, frame);
-        serialize(drawData->TotalVtxCount, frame);
-        serialize(drawData->DisplayPos.x, frame);
-        serialize(drawData->DisplayPos.y, frame);
-        serialize(drawData->DisplaySize.x, frame);
-        serialize(drawData->DisplaySize.y, frame);
-        serialize(drawData->FramebufferScale.x, frame);
-        serialize(drawData->FramebufferScale.y, frame);
-
-        for (int32_t iList = 0; iList < drawData->CmdListsCount; ++iList) {
-            auto & cmdList = drawData->CmdLists[iList];
-
+    
+        serialize(drawData->Valid,               frame);
+        serialize(drawData->TotalIdxCount,       frame);
+        serialize(drawData->TotalVtxCount,       frame);
+        serialize(drawData->DisplayPos.x,        frame);
+        serialize(drawData->DisplayPos.y,        frame);
+        serialize(drawData->DisplaySize.x,       frame);
+        serialize(drawData->DisplaySize.y,       frame);
+        serialize(drawData->FramebufferScale.x,  frame);
+        serialize(drawData->FramebufferScale.y,  frame);
+    
+        // ---- NEW: number of command‑lists (ImVector size) ----
+        uint32_t nCmdLists = static_cast<uint32_t>(drawData->CmdLists.Size);
+        serialize(nCmdLists, frame);
+    
+        for (int32_t iList = 0; iList < nCmdLists; ++iList) {
+            ImDrawList* cmdList = drawData->CmdLists[iList];   // <-- note the pointer
             serialize(cmdList->CmdBuffer, frame);
             serialize(cmdList->VtxBuffer, frame);
             serialize(cmdList->IdxBuffer, frame);
-            serialize(cmdList->Flags, frame);
+            serialize(cmdList->Flags,     frame);
         }
-
+    
         frames.emplace_back(std::move(frame));
-
         return true;
     }
 
 
-    bool getFrame(int32_t fid, ImDrawData * drawData, std::vector<ImDrawList> & drawLists, const ImDrawListSharedData * drawListSharedData) {
-        if (fid >= (int32_t) frames.size()) return false;
+    bool getFrame(int32_t fid,
+        ImDrawData * drawData,
+        std::vector<ImDrawList> & drawLists,
+        ImDrawListSharedData * drawListSharedData)   // ← can be const or non‑const; see previous answer
+    {
+        if (fid >= static_cast<int32_t>(frames.size())) return false;
 
-        size_t offset = 0;
-        auto & buf = frames[fid];
+        size_t   offset = 0;
+        auto &   buf    = frames[fid];
 
-        unserialize(drawData->Valid, buf, offset);
-        unserialize(drawData->CmdListsCount, buf, offset);
-        unserialize(drawData->TotalIdxCount, buf, offset);
-        unserialize(drawData->TotalVtxCount, buf, offset);
-        unserialize(drawData->DisplayPos.x, buf, offset);
-        unserialize(drawData->DisplayPos.y, buf, offset);
-        unserialize(drawData->DisplaySize.x, buf, offset);
-        unserialize(drawData->DisplaySize.y, buf, offset);
-        unserialize(drawData->FramebufferScale.x, buf, offset);
-        unserialize(drawData->FramebufferScale.y, buf, offset);
+        unserialize(drawData->Valid,               buf, offset);
+        unserialize(drawData->TotalIdxCount,       buf, offset);
+        unserialize(drawData->TotalVtxCount,       buf, offset);
+        unserialize(drawData->DisplayPos.x,        buf, offset);
+        unserialize(drawData->DisplayPos.y,        buf, offset);
+        unserialize(drawData->DisplaySize.x,       buf, offset);
+        unserialize(drawData->DisplaySize.y,       buf, offset);
+        unserialize(drawData->FramebufferScale.x,  buf, offset);
+        unserialize(drawData->FramebufferScale.y,  buf, offset);
 
-        if ((int) drawLists.size() < drawData->CmdListsCount) {
-            drawLists.resize(drawData->CmdListsCount, ImDrawList(drawListSharedData));
-        }
+        // ---- NEW: read the number of command‑lists ----
+        uint32_t nCmdLists = 0;
+        unserialize(nCmdLists, buf, offset);
 
-        if (drawData->CmdLists) {
-            delete [] drawData->CmdLists;
-        }
+        // Make sure we have enough *ImDrawList* objects to point at
+        if (static_cast<int>(drawLists.size()) < static_cast<int>(nCmdLists))
+        drawLists.resize(nCmdLists, ImDrawList(drawListSharedData));
 
-        drawData->CmdLists = new ImDrawList* [drawData->CmdListsCount];
+        // Resize the ImVector that lives inside ImDrawData
+        drawData->CmdLists.resize(nCmdLists);
 
-        for (int32_t iList = 0; iList < drawData->CmdListsCount; ++iList) {
+        // Fill the vector with pointers to the pre‑allocated ImDrawList objects
+        for (int32_t iList = 0; iList < static_cast<int32_t>(nCmdLists); ++iList) {
             drawData->CmdLists[iList] = &drawLists[iList];
 
-            auto & cmdList = drawData->CmdLists[iList];
-
+            ImDrawList* cmdList = drawData->CmdLists[iList];
             unserialize(cmdList->CmdBuffer, buf, offset);
             unserialize(cmdList->VtxBuffer, buf, offset);
             unserialize(cmdList->IdxBuffer, buf, offset);
-            unserialize(cmdList->Flags, buf, offset);
+            unserialize(cmdList->Flags,     buf, offset);
         }
 
         return true;
