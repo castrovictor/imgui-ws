@@ -1,6 +1,6 @@
 #include "imgui-extra/imgui_impl.h"
 
-#include "imgui/backends/imgui_impl_sdl.h"
+#include "imgui/backends/imgui_impl_sdl2.h"
 #include "imgui/backends/imgui_impl_opengl3.h"
 
 #include <SDL.h>
@@ -72,7 +72,7 @@ ImGuiContext* ImGui_Init(SDL_Window* window, SDL_GLContext gl_context) {
 }
 
 void ImGui_Shutdown() { ImGui_ImplOpenGL3_Shutdown(); ImGui_ImplSDL2_Shutdown(); }
-void ImGui_NewFrame(SDL_Window* window) { ImGui_ImplOpenGL3_NewFrame(); ImGui_ImplSDL2_NewFrame(window); }
+void ImGui_NewFrame(SDL_Window* window) { (void)window; ImGui_ImplOpenGL3_NewFrame(); ImGui_ImplSDL2_NewFrame(); }
 bool ImGui_ProcessEvent(const SDL_Event* event) { return ImGui_ImplSDL2_ProcessEvent(event); }
 
 void ImGui_RenderDrawData(ImDrawData* draw_data)    { ImGui_ImplOpenGL3_RenderDrawData(draw_data); }

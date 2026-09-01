@@ -31,7 +31,7 @@ target_compile_definitions(imgui PUBLIC
 if (IMGUI_WS_SUPPORT_SDL2)
     add_library(imgui-sdl2
         imgui-extra/imgui_impl.cpp
-        imgui/backends/imgui_impl_sdl.cpp
+        imgui/backends/imgui_impl_sdl2.cpp
         imgui/backends/imgui_impl_opengl3.cpp
         )
 
